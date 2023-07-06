@@ -32,7 +32,7 @@ export const startFirestoreImport = functions.https.onRequest(async (request, re
   
       await Promise.all(deletePromises);
   
-      //response.send('All documents (except "storedHash") deleted successfully.');
+      response.send('All documents (except "storedHash") deleted successfully.');
   
       const firestoreAdminClient = new firestoreAdmin.v1.FirestoreAdminClient();
       const databaseName = `projects/${projectId}/databases/(default)`;
