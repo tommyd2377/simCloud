@@ -2,15 +2,17 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 import * as firestoreAdmin from '@google-cloud/firestore';
+import { Request, Response } from 'express';
+
 
 admin.initializeApp();
 
 const bucket = 'gs://<bucket name>';
 const projectId = '<project id>';
+const firestore = admin.firestore();
 
 export const startFirestoreImport = functions.https.onRequest(async (request, response) => {
     try {
-      const firestore = admin.firestore();
       const collections = await firestore.listCollections();
   
       // Delete all documents in each collection except for "storedHash"
@@ -54,28 +56,33 @@ export const startFirestoreImport = functions.https.onRequest(async (request, re
   
 export const checkDatabaseState = functions.https.onRequest(async (request, response) => {
   try {
-    const docRef = admin.firestore().doc('shoes/nike');
-    const snapshot = await docRef.get();
+    const collections = await firestore.listCollections();
+    const hash = createHash('md5');
 
-    //563c38a5d8334a9b25a166860d9a8c44
+    for (const collectionRef of collections) {
+      if (collectionRef.id !== 'storedHash') { // Skip "storedHash" collection
+        const querySnapshot = await collectionRef.get();
 
-    if (snapshot.exists) {
-      const data = snapshot.data();
-      const currentHash = calculateHash(data);
-
-      // Retrieve the stored hash from the database
-      const storedHashSnapshot = await admin.firestore().doc('storedHash/hash').get();
-      const storedHash = storedHashSnapshot.exists ? storedHashSnapshot.data()?.hash : null;
-
-      if (storedHash === currentHash) {
-        response.send('Database is in a defined state. No changes detected.');
-      } else {
-        // Update the stored hash with the current hash
-        await admin.firestore().doc('storedHash/hash').set({ hash: currentHash });
-        response.send('Database state has changed. Hash updated.');
+        querySnapshot.forEach((docSnapshot) => {
+          const data = docSnapshot.data();
+          const serializedData = JSON.stringify(data);
+          hash.update(serializedData);
+        });
       }
+    }
+
+    const currentHash = hash.digest('hex');
+
+    // Retrieve the stored hash from the database
+    const storedHashSnapshot = await admin.firestore().doc('storedHash/hash').get();
+    const storedHash = storedHashSnapshot.exists ? storedHashSnapshot.data()?.hash : null;
+
+    if (storedHash === currentHash) {
+      response.send('Database is in a defined state. No changes detected.');
     } else {
-      response.send('Database is not in a defined state or the document does not exist.');
+      // Update the stored hash with the current hash
+      await admin.firestore().doc('storedHash/hash').set({ hash: currentHash });
+      response.send('Database state has changed. Hash updated.');
     }
   } catch (error) {
     console.error('Error retrieving Firestore document:', error);
@@ -83,7 +90,7 @@ export const checkDatabaseState = functions.https.onRequest(async (request, resp
   }
 });
 
-function calculateHash(data: any): string {
-  const hash = createHash('md5').update(JSON.stringify(data)).digest('hex');
-  return hash;
-}
+export const triggerFirestoreImport = functions.pubsub.topic('trigger-import').onPublish((message) => {
+  console.log('Firestore import triggered');
+  return startFirestoreImport({} as Request, {} as Response);
+});
