@@ -4,7 +4,6 @@ import { createHash } from 'crypto';
 import * as firestoreAdmin from '@google-cloud/firestore';
 import { Request, Response } from 'express';
 
-
 admin.initializeApp();
 
 const bucket = 'gs://<bucket name>';
